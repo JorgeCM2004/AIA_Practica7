@@ -1,0 +1,5 @@
+.venv
+__pycache__
+temp_uploads/
+temp_results/
+.git

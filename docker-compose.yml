@@ -1,0 +1,35 @@
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    container_name: medical_backend
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    volumes:
+      - shared_temp:/app/temp_uploads
+      - shared_results:/app/temp_results
+      - ./logs:/app/logs
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+    container_name: medical_frontend
+    ports:
+      - "8501:8501"
+    environment:
+      - API_URL=http://backend:8000
+    volumes:
+      - shared_temp:/app/temp_uploads
+      - shared_results:/app/temp_results
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+volumes:
+  shared_temp:
+  shared_results:
