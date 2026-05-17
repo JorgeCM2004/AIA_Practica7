@@ -5,7 +5,7 @@ import uuid
 import requests
 import streamlit as st
 
-st.set_page_config(page_title="Plataforma Salud Maternal", layout="wide")
+st.set_page_config(page_title="AIA_P7", layout="wide")
 
 API_URL = os.getenv("API_URL", "http://127.0.0.1:8000")
 
@@ -31,43 +31,11 @@ def renderizar_mensaje_multimodal(texto):
 			if parte.strip():
 				st.write(parte)
 
+headers = st.context.headers if hasattr(st.context, "headers") else {}
 
-modo = st.sidebar.radio(
-	"Selecciona tu portal:", ["Portal de la Paciente 🤰", "Portal Médico 🩺"]
-)
+grupos_usuario = headers.get("X-authentik-groups", "").lower()
 
-if modo == "Portal de la Paciente 🤰":
-	st.title("Asistente de Salud Maternal")
-	st.info("💡 Este espacio es seguro. Todo lo que digas será anonimizado.")
-
-	for msg in st.session_state.mensajes_paciente:
-		with st.chat_message(msg["role"]):
-			st.write(msg["content"])
-
-	if prompt := st.chat_input("Escribe tu consulta médica aquí..."):
-		st.session_state.mensajes_paciente.append({"role": "user", "content": prompt})
-		with st.chat_message("user"):
-			st.write(prompt)
-
-		with st.chat_message("assistant"):
-			with st.spinner("Analizando con seguridad..."):
-				payload = {"query": prompt, "session_id": st.session_state.session_id}
-				try:
-					respuesta_api = requests.post(
-						f"{API_URL}/api/paciente/chat", json=payload
-					)
-					if respuesta_api.status_code == 200:
-						respuesta_texto = respuesta_api.json()["respuesta"]
-						st.write(respuesta_texto)
-						st.session_state.mensajes_paciente.append(
-							{"role": "assistant", "content": respuesta_texto}
-						)
-					else:
-						st.error("Error conectando con el servidor médico.")
-				except Exception as e:
-					st.error(f"Error de conexión: {e}")
-
-elif modo == "Portal Médico 🩺":
+if "doctores" in grupos_usuario:
 	st.title("Dashboard Clínico")
 
 	col1, col2 = st.columns([1, 2])
@@ -117,3 +85,36 @@ elif modo == "Portal Médico 🩺":
 								st.error(f"Detalle: {respuesta_api.text}")
 						except Exception as e:
 							st.error(f"Error de conexión con FastAPI: {e}")
+
+elif "pacientes" in grupos_usuario:
+	st.title("Asistente de Salud Maternal")
+	for msg in st.session_state.mensajes_paciente:
+		with st.chat_message(msg["role"]):
+			st.write(msg["content"])
+
+	if prompt := st.chat_input("Escribe tu consulta médica aquí..."):
+		st.session_state.mensajes_paciente.append({"role": "user", "content": prompt})
+		with st.chat_message("user"):
+			st.write(prompt)
+
+		with st.chat_message("assistant"):
+			with st.spinner("Analizando con seguridad..."):
+				payload = {"query": prompt, "session_id": st.session_state.session_id}
+				try:
+					respuesta_api = requests.post(
+						f"{API_URL}/api/paciente/chat", json=payload
+					)
+					if respuesta_api.status_code == 200:
+						respuesta_texto = respuesta_api.json()["respuesta"]
+						st.write(respuesta_texto)
+						st.session_state.mensajes_paciente.append(
+							{"role": "assistant", "content": respuesta_texto}
+						)
+					else:
+						st.error("Error conectando con el servidor médico.")
+				except Exception as e:
+					st.error(f"Error de conexión: {e}")
+
+else:
+    st.error("🚨 Acceso denegado. Su usuario no tiene un rol asignado en el sistema.")
+    st.stop()
