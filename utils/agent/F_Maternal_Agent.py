@@ -1,10 +1,12 @@
 import os
+import sqlite3
 from typing import Literal, TypedDict
 
 from langchain_community.tools import DuckDuckGoSearchRun
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.prompts import PromptTemplate
 from langchain_groq import ChatGroq
+from langgraph.checkpoint.sqlite import SqliteSaver
 from langgraph.graph import END, StateGraph
 
 from utils.security.F_anonymizer import anonymize_node
@@ -21,6 +23,11 @@ class GraphState(TypedDict):
 
 class Maternal_Agent:
 	def __init__(self, searcher, model_name="llama3.2"):
+		os.makedirs("messages", exist_ok=True)
+		self.conn = sqlite3.connect(
+			"messages/memoria_chats.db", check_same_thread=False
+		)
+		self.memory = SqliteSaver(self.conn)
 		self.searcher = searcher
 		self.llm = ChatGroq(
 			model="openai/gpt-oss-20b",
@@ -162,7 +169,7 @@ class Maternal_Agent:
 
 		return g.compile()
 
-	def run(self, query: str):
+	def run(self, query: str, session_id: str, callbacks=None):
 		inputs = {
 			"question": query,
 			"context": "",
@@ -170,5 +177,13 @@ class Maternal_Agent:
 			"source": "",
 			"is_safe": "",
 		}
-		final_state = self.app.invoke(inputs)
+		config = {
+			"configurable": {"thread_id": session_id},
+			"metadata": {"langfuse_session_id": session_id},
+			"tags": ["paciente", "produccion"],
+		}
+		if callbacks:
+			config["callbacks"] = callbacks
+		final_state = self.app.invoke(inputs, config=config)
+
 		return final_state["answer"]

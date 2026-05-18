@@ -14,9 +14,14 @@ wheels/
 images/
 temp*
 logs/
+chroma_db/
+messages/
 
 #Memoria
 memoria/
 
 #Testing
 .pytest_cache/
+
+# Modelos
+weights/

@@ -1,3 +1,4 @@
+import json
 import os
 import re
 import uuid
@@ -9,10 +10,31 @@ st.set_page_config(page_title="AIA_P7", layout="wide")
 
 API_URL = os.getenv("API_URL", "http://127.0.0.1:8000")
 
-if "session_id" not in st.session_state:
-	st.session_state.session_id = str(uuid.uuid4())
-if "mensajes_paciente" not in st.session_state:
-	st.session_state.mensajes_paciente = []
+headers = st.context.headers if hasattr(st.context, "headers") else {}
+grupos_usuario = headers.get("X-authentik-groups", "pacientes").lower()
+
+nombre_usuario = headers.get("X-authentik-username", "usuario_local").lower()
+
+CARPETA_MEMORIAS = "messages"
+os.makedirs(CARPETA_MEMORIAS, exist_ok=True)
+
+ARCHIVO_MEMORIA = os.path.join(CARPETA_MEMORIAS, f"memoria_{nombre_usuario}.json")
+
+
+def cargar_memoria():
+	if os.path.exists(ARCHIVO_MEMORIA):
+		try:
+			with open(ARCHIVO_MEMORIA, "r", encoding="utf-8") as f:
+				return json.load(f)
+		except Exception as e:
+			print(e)
+			return None
+	return None
+
+
+def guardar_memoria():
+	with open(ARCHIVO_MEMORIA, "w", encoding="utf-8") as f:
+		json.dump(st.session_state.historiales_chat, f, ensure_ascii=False, indent=4)
 
 
 def renderizar_mensaje_multimodal(texto):
@@ -31,9 +53,6 @@ def renderizar_mensaje_multimodal(texto):
 			if parte.strip():
 				st.write(parte)
 
-headers = st.context.headers if hasattr(st.context, "headers") else {}
-
-grupos_usuario = headers.get("X-authentik-groups", "").lower()
 
 if "doctores" in grupos_usuario:
 	st.title("Dashboard Clínico")
@@ -87,19 +106,59 @@ if "doctores" in grupos_usuario:
 							st.error(f"Error de conexión con FastAPI: {e}")
 
 elif "pacientes" in grupos_usuario:
+	if "historiales_chat" not in st.session_state:
+		memoria_guardada = cargar_memoria()
+
+		if memoria_guardada:
+			st.session_state.historiales_chat = memoria_guardada
+			st.session_state.session_id_actual = list(memoria_guardada.keys())[-1]
+		else:
+			default_id = str(uuid.uuid4())
+			st.session_state.historiales_chat = {default_id: []}
+			st.session_state.session_id_actual = default_id
+
+	with st.sidebar:
+		st.title("💬 Tus Chats")
+
+		if st.button("➕ Nuevo Chat", use_container_width=True):
+			nuevo_id = str(uuid.uuid4())
+			st.session_state.historiales_chat[nuevo_id] = []
+			st.session_state.session_id_actual = nuevo_id
+			guardar_memoria()
+			st.rerun()
+
+		st.divider()
+
+		st.subheader("Historial")
+		for s_id, mensajes in st.session_state.historiales_chat.items():
+			titulo = (
+				mensajes[0]["content"][:20] + "..." if mensajes else "Nuevo Chat vacío"
+			)
+
+			if st.button(titulo, key=s_id, use_container_width=True):
+				st.session_state.session_id_actual = s_id
+				st.rerun()
+
 	st.title("Asistente de Salud Maternal")
-	for msg in st.session_state.mensajes_paciente:
+	id_actual = st.session_state.session_id_actual
+
+	for msg in st.session_state.historiales_chat[id_actual]:
 		with st.chat_message(msg["role"]):
 			st.write(msg["content"])
 
 	if prompt := st.chat_input("Escribe tu consulta médica aquí..."):
-		st.session_state.mensajes_paciente.append({"role": "user", "content": prompt})
+		st.session_state.historiales_chat[id_actual].append(
+			{"role": "user", "content": prompt}
+		)
+		guardar_memoria()
+
 		with st.chat_message("user"):
 			st.write(prompt)
 
 		with st.chat_message("assistant"):
 			with st.spinner("Analizando con seguridad..."):
-				payload = {"query": prompt, "session_id": st.session_state.session_id}
+				payload = {"query": prompt, "session_id": id_actual}
+
 				try:
 					respuesta_api = requests.post(
 						f"{API_URL}/api/paciente/chat", json=payload
@@ -107,14 +166,14 @@ elif "pacientes" in grupos_usuario:
 					if respuesta_api.status_code == 200:
 						respuesta_texto = respuesta_api.json()["respuesta"]
 						st.write(respuesta_texto)
-						st.session_state.mensajes_paciente.append(
+
+						st.session_state.historiales_chat[id_actual].append(
 							{"role": "assistant", "content": respuesta_texto}
 						)
-					else:
-						st.error("Error conectando con el servidor médico.")
+						guardar_memoria()
 				except Exception as e:
 					st.error(f"Error de conexión: {e}")
 
 else:
-    st.error("🚨 Acceso denegado. Su usuario no tiene un rol asignado en el sistema.")
-    st.stop()
+	st.error("🚨 Acceso denegado. Su usuario no tiene un rol asignado en el sistema.")
+	st.stop()

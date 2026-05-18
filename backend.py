@@ -1,4 +1,5 @@
 from fastapi import FastAPI, HTTPException
+from langfuse.langchain import CallbackHandler
 from pydantic import BaseModel
 
 from utils import Hybrid_Searcher
@@ -21,10 +22,18 @@ class MedicoRequest(BaseModel):
 
 
 @app.post("/api/paciente/chat")
-async def chat_paciente(request: PacienteRequest):
+def chat_paciente(request: PacienteRequest):
 	try:
 		logger.info(f"<patient query> {request.query}")
-		respuesta = paciente_agent.run(request.query)
+
+		lf_handler = CallbackHandler()
+
+		respuesta = paciente_agent.run(
+			query=request.query,
+			session_id=request.session_id,
+			callbacks=[lf_handler],
+		)
+
 		logger.info(f"<maternal agent response> {respuesta}")
 		return {"respuesta": respuesta}
 	except Exception as e:
@@ -33,10 +42,14 @@ async def chat_paciente(request: PacienteRequest):
 
 
 @app.post("/api/medico/chat")
-async def chat_medico(request: MedicoRequest):
+def chat_medico(request: MedicoRequest):
 	try:
 		logger.info(f"<doctor query> {request.query}")
-		respuesta = medico_agent.run(request.query)
+
+		lf_handler = CallbackHandler()
+
+		respuesta = medico_agent.run(query=request.query, callbacks=[lf_handler])
+
 		logger.info(f"<medical agent response> {respuesta}")
 		return {"respuesta": respuesta}
 	except Exception as e:

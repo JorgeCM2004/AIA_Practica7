@@ -13,7 +13,9 @@ formato = logging.Formatter(
 )
 
 ruta_archivo = os.path.join(RUTA_LOGS, "backend.log")
-file_handler = RotatingFileHandler(ruta_archivo, maxBytes=5000000, backupCount=3)
+file_handler = RotatingFileHandler(
+	ruta_archivo, maxBytes=5000000, backupCount=3, encoding="utf-8"
+)
 file_handler.setFormatter(formato)
 
 console_handler = logging.StreamHandler()

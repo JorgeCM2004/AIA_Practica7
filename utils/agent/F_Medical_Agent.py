@@ -134,7 +134,7 @@ class Medical_Agent:
 
 		return workflow.compile()
 
-	def run(self, query: str):
+	def run(self, query: str, callbacks=None):
 		sys_msg = SystemMessage(
 			content="""You are an Advanced Clinical Copilot designed exclusively to assist Obstetricians.
             You have access to predictive AI tools (Computer Vision and Machine Learning).
@@ -151,5 +151,8 @@ class Medical_Agent:
 		)
 
 		inputs = {"messages": [sys_msg, HumanMessage(content=query)]}
-		final_state = self.agent.invoke(inputs)
+		config = {"tags": ["doctor", "produccion"]}
+		if callbacks:
+			config["callbacks"] = callbacks
+		final_state = self.agent.invoke(inputs, config=config)
 		return final_state["messages"][-1].content
