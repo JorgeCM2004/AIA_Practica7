@@ -58,6 +58,12 @@ if "doctores" in grupos_usuario:
 	st.title("Dashboard Clínico")
 
 	col1, col2 = st.columns([1, 2])
+	with st.sidebar:
+		st.link_button(
+			"🚪 Cerrar Sesión",
+			"/outpost.goauthentik.io/sign_out",
+			use_container_width=True,
+		)
 
 	with col1:
 		st.subheader("Analisis de Ultrasonido")
@@ -118,6 +124,12 @@ elif "pacientes" in grupos_usuario:
 			st.session_state.session_id_actual = default_id
 
 	with st.sidebar:
+		st.link_button(
+			"🚪 Cerrar Sesión",
+			"/outpost.goauthentik.io/sign_out",
+			use_container_width=True,
+		)
+
 		st.title("💬 Tus Chats")
 
 		if st.button("➕ Nuevo Chat", use_container_width=True):
@@ -135,9 +147,34 @@ elif "pacientes" in grupos_usuario:
 				mensajes[0]["content"][:20] + "..." if mensajes else "Nuevo Chat vacío"
 			)
 
+			if s_id == st.session_state.session_id_actual:
+				titulo = f"👉 {titulo}"
+
 			if st.button(titulo, key=s_id, use_container_width=True):
 				st.session_state.session_id_actual = s_id
 				st.rerun()
+
+		st.divider()
+
+		st.subheader("Opciones")
+
+		if st.button(
+			"🗑️ Borrar chat actual", use_container_width=True, type="secondary"
+		):
+			id_borrar = st.session_state.session_id_actual
+			del st.session_state.historiales_chat[id_borrar]
+
+			if not st.session_state.historiales_chat:
+				nuevo_id = str(uuid.uuid4())
+				st.session_state.historiales_chat[nuevo_id] = []
+				st.session_state.session_id_actual = nuevo_id
+			else:
+				st.session_state.session_id_actual = list(
+					st.session_state.historiales_chat.keys()
+				)[-1]
+
+			guardar_memoria()
+			st.rerun()
 
 	st.title("Asistente de Salud Maternal")
 	id_actual = st.session_state.session_id_actual
