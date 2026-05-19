@@ -41,16 +41,16 @@ class Medical_Agent:
 			Use this tool to calculate risks based on tabular CTG data.
 			You must pass a single comma-separated string of exactly 21 numbers.
 			"""
-			payload = {"datos_csv": patient_data_csv}
+			payload = {"patient_data_csv": patient_data_csv}
 
 			try:
 				respuesta = requests.post(
-					f"{self.api}/api//medico/tabular", json=payload
+					f"{self.api}/api/medico/tabular", json=payload
 				)
 				respuesta.raise_for_status()
 				datos = respuesta.json()
 
-				return f"El modelo de Machine Learning devolvió: {datos['resultado_xgboost']}"
+				return f"El modelo de Machine Learning devolvió: {datos}"
 
 			except Exception as e:
 				return f"Error al contactar con el microservicio predictivo: {str(e)}"

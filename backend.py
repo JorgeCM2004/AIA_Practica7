@@ -32,6 +32,10 @@ class MedicoRequest(BaseModel):
 	query: str
 
 
+class TabularRequest(BaseModel):
+	patient_data_csv: str
+
+
 @app.post("/api/paciente/chat")
 def chat_paciente(request: PacienteRequest):
 	try:
@@ -69,8 +73,9 @@ def chat_medico(request: MedicoRequest):
 
 
 @app.post("/api/medico/tabular")
-def predict_from_tabular_data(patient_data_csv: str):
+def predict_from_tabular_data(payload: TabularRequest):
 	try:
+		patient_data_csv = payload.patient_data_csv
 		valores = [float(x.strip()) for x in patient_data_csv.split(",")]
 
 		if len(valores) != 21:
