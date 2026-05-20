@@ -12,6 +12,7 @@ from utils.tabular.F_Data_Preprocessor import Data_Preprocessor
 from utils.tabular.F_XGBoost import XGBoost
 from utils.vision.F_CNN_Classifier import CNN_Classifier
 from utils.vision.F_YOLO_Model import YOLO_Model
+from utils.tabular.F_Explainer import Explainer
 
 app = FastAPI(title="Maternal Health AI Server", version="1.0")
 searcher = Hybrid_Searcher()
@@ -21,7 +22,7 @@ cnn_model = CNN_Classifier(weights_path="weights/CNN_Classifier.pth")
 yolo_model = YOLO_Model(model_path="weights/YOLO.pt")
 xgb_model = XGBoost()
 preprocessor = Data_Preprocessor()
-
+explainer = Explainer()
 
 class PacienteRequest(BaseModel):
 	query: str
@@ -112,7 +113,16 @@ def predict_from_tabular_data(payload: TabularRequest):
 
 		prediccion_cruda = predicciones[0]
 
-		return f"ML RESULT: XGBoost prediction is Class {prediccion_cruda} based on the provided metrics."
+		explicaciones_lista = explainer.explain(xgb_model.model, df_escalado, predicciones)
+
+		datos_explicacion = explicaciones_lista[0]
+
+		lista_razones = []
+		for feature in datos_explicacion["top_features"]:
+			lista_razones.append(f"{feature['feature']} ({feature['direction']} con impacto {feature['shap_value']:.2f})")
+
+		explicacion = ", ".join(lista_razones)
+		return f"ML RESULT: XGBoost prediction is Class {prediccion_cruda} based on the provided metrics. The SHAP explanation is {explicacion}"
 
 	except Exception as e:
 		return f"Error during ML Tabular inference: {str(e)}"
