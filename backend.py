@@ -1,6 +1,11 @@
 import os
 
 import pandas as pd
+import torch
+import numpy as np
+import cv2
+from PIL import Image
+from torchvision import transforms
 from fastapi import FastAPI, HTTPException
 from langfuse.langchain import CallbackHandler
 from pydantic import BaseModel
@@ -11,7 +16,7 @@ from utils.logger.F_logger import logger
 from utils.tabular.F_Data_Preprocessor import Data_Preprocessor
 from utils.tabular.F_XGBoost import XGBoost
 from utils.vision.F_CNN_Classifier import CNN_Classifier
-from utils.vision.F_YOLO_Model import YOLO_Model
+from utils.vision.F_UNet_Model import UNet_Model
 from utils.tabular.F_Explainer import Explainer
 
 app = FastAPI(title="Maternal Health AI Server", version="1.0")
@@ -19,10 +24,10 @@ searcher = Hybrid_Searcher()
 paciente_agent = Maternal_Agent(searcher=searcher)
 medico_agent = Medical_Agent()
 cnn_model = CNN_Classifier(weights_path="weights/CNN_Classifier.pth")
-yolo_model = YOLO_Model(model_path="weights/YOLO.pt")
 xgb_model = XGBoost()
 preprocessor = Data_Preprocessor()
 explainer = Explainer()
+unet = UNet_Model()
 
 class PacienteRequest(BaseModel):
 	query: str
@@ -130,28 +135,53 @@ def predict_from_tabular_data(payload: TabularRequest):
 
 @app.post("/api/medico/vision")
 def analyze_ultrasound() -> str:
-	ruta_fija = "temp_uploads/current_scan.png"
+    ruta_fija = "temp_uploads/current_scan.png"
 
-	if not os.path.exists(ruta_fija):
-		return "Error: No image uploaded yet. Ask the doctor to upload an ultrasound."
+    if not os.path.exists(ruta_fija):
+        return "Error: No image uploaded yet. Ask the doctor to upload an ultrasound."
 
-	try:
-		diagnostico_cnn = cnn_model.predict(ruta_fija)
-		coordenadas = yolo_model.predict(ruta_fija)
-		img_marcada = yolo_model.draw_box(ruta_fija, coordenadas)
+    try:
+        diagnostico_cnn = cnn_model.predict(ruta_fija)
+        img_original = Image.open(ruta_fija).convert("RGB")
+        img_gray = img_original.convert("L")
 
-		os.makedirs("temp_results", exist_ok=True)
-		ruta_guardado = "temp_results/marked_current_scan.png"
-		img_marcada.save(ruta_guardado)
+        transform = transforms.Compose([
+            transforms.Resize((224, 224)),
+            transforms.ToTensor(),
+        ])
 
-		return (
-			f"CV RESULT:\n"
-			f"- CNN Tissue Classification: {diagnostico_cnn}\n"
-			f"- YOLO Bounding Box Coordinates: {coordenadas}\n"
-			f"Visual evidence ready. IMPORTANT: You must include this exact tag in your response: [IMG]{ruta_guardado}[/IMG]"
-		)
-	except Exception as e:
-		return f"Error during Vision inference: {str(e)}"
+        input_tensor = transform(img_gray).unsqueeze(0).to(unet.device)
+
+        unet.model.eval()
+        with torch.no_grad():
+            with torch.autocast(device_type=unet.device.type):
+                output = unet.model(input_tensor)
+
+            mask_tensor = (output > 0.5).float().cpu()[0][0]
+
+        mask_np = mask_tensor.numpy()
+
+        mask_img = Image.fromarray((mask_np * 255).astype(np.uint8)).resize(img_original.size, Image.NEAREST)
+
+        mask_np_resized = np.array(mask_img)
+        img_np = np.array(img_original)
+        contours, _ = cv2.findContours(mask_np_resized, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        cv2.drawContours(img_np, contours, -1, (255, 0, 0), thickness=2)
+        img_final = Image.fromarray(img_np)
+
+        os.makedirs("temp_results", exist_ok=True)
+        ruta_guardado = "temp_results/segmented_current_scan.png"
+        img_final.save(ruta_guardado)
+
+        return (
+            f"CV RESULT:\n"
+            f"- CNN Tissue Classification: {diagnostico_cnn}\n"
+            f"- Model: UNet Semantic Segmentation\n"
+            f"Visual evidence ready. IMPORTANT: You must include this exact tag in your response: [IMG]{ruta_guardado}[/IMG]"
+        )
+
+    except Exception as e:
+        return f"Error during Vision inference (UNet): {str(e)}"
 
 
 if __name__ == "__main__":

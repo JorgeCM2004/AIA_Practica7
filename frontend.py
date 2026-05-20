@@ -11,7 +11,7 @@ st.set_page_config(page_title="AIA_P7", layout="wide")
 API_URL = os.getenv("API_URL", "http://127.0.0.1:8000")
 
 headers = st.context.headers if hasattr(st.context, "headers") else {}
-grupos_usuario = headers.get("X-authentik-groups", "").lower()
+grupos_usuario = headers.get("X-authentik-groups", "doctores").lower()
 
 nombre_usuario = headers.get("X-authentik-username", "usuario_local").lower()
 
@@ -211,6 +211,21 @@ elif "pacientes" in grupos_usuario:
 				except Exception as e:
 					st.error(f"Error de conexión: {e}")
 
+elif "admin" in grupos_usuario:
+	with st.sidebar:
+		st.link_button(
+			"🚪 Cerrar Sesión",
+			"/outpost.goauthentik.io/sign_out",
+			use_container_width=True,
+		)
+
+	st.title("Panel de control")
+
 else:
 	st.error("🚨 Acceso denegado. Su usuario no tiene un rol asignado en el sistema.")
+	st.link_button(
+		"Back",
+		"/outpost.goauthentik.io/sign_out",
+		width="content",
+	)
 	st.stop()
