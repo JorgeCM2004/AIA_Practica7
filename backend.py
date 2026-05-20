@@ -9,6 +9,8 @@ from torchvision import transforms
 from fastapi import FastAPI, HTTPException
 from langfuse.langchain import CallbackHandler
 from pydantic import BaseModel
+from langchain_core.messages import HumanMessage, SystemMessage
+from langchain_groq import ChatGroq
 
 from utils import Hybrid_Searcher
 from utils.agent import Maternal_Agent, Medical_Agent
@@ -140,54 +142,54 @@ def predict_from_tabular_data(payload: TabularRequest):
 
 @app.post("/api/medico/vision")
 def analyze_ultrasound(filename: str = "current_scan.png") -> str:
-    ruta_fija = f"temp_uploads/{filename}"
+	ruta_fija = f"temp_uploads/{filename}"
 
-    if not os.path.exists(ruta_fija):
-        return f"Error: Image '{filename}' not found. Ask the doctor to upload an ultrasound."
+	if not os.path.exists(ruta_fija):
+		return f"Error: Image '{filename}' not found. Ask the doctor to upload an ultrasound."
 
-    try:
-        diagnostico_cnn = cnn_model.predict(ruta_fija)
-        img_original = Image.open(ruta_fija).convert("RGB")
-        img_gray = img_original.convert("L")
+	try:
+		diagnostico_cnn = cnn_model.predict(ruta_fija)
+		img_original = Image.open(ruta_fija).convert("RGB")
+		img_gray = img_original.convert("L")
 
-        transform = transforms.Compose([
-            transforms.Resize((224, 224)),
-            transforms.ToTensor(),
-        ])
+		transform = transforms.Compose([
+			transforms.Resize((224, 224)),
+			transforms.ToTensor(),
+		])
 
-        input_tensor = transform(img_gray).unsqueeze(0).to(unet.device)
+		input_tensor = transform(img_gray).unsqueeze(0).to(unet.device)
 
-        unet.model.eval()
-        with torch.no_grad():
-            with torch.autocast(device_type=unet.device.type):
-                output = unet.model(input_tensor)
+		unet.model.eval()
+		with torch.no_grad():
+			with torch.autocast(device_type=unet.device.type):
+				output = unet.model(input_tensor)
 
-            mask_tensor = (output > 0.5).float().cpu()[0][0]
+			mask_tensor = (output > 0.5).float().cpu()[0][0]
 
-        mask_np = mask_tensor.numpy()
+		mask_np = mask_tensor.numpy()
 
-        mask_img = Image.fromarray((mask_np * 255).astype(np.uint8)).resize(img_original.size, Image.NEAREST)
+		mask_img = Image.fromarray((mask_np * 255).astype(np.uint8)).resize(img_original.size, Image.NEAREST)
 
-        mask_np_resized = np.array(mask_img)
-        img_np = np.array(img_original)
-        contours, _ = cv2.findContours(mask_np_resized, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-        cv2.drawContours(img_np, contours, -1, (255, 0, 0), thickness=2)
-        img_final = Image.fromarray(img_np)
+		mask_np_resized = np.array(mask_img)
+		img_np = np.array(img_original)
+		contours, _ = cv2.findContours(mask_np_resized, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+		cv2.drawContours(img_np, contours, -1, (255, 0, 0), thickness=2)
+		img_final = Image.fromarray(img_np)
 
-        os.makedirs("temp_results", exist_ok=True)
-        nombre_resultado = f"segmented_{filename}"
-        ruta_guardado = f"temp_results/{nombre_resultado}"
-        img_final.save(ruta_guardado)
+		os.makedirs("temp_results", exist_ok=True)
+		nombre_resultado = f"segmented_{filename}"
+		ruta_guardado = f"temp_results/{nombre_resultado}"
+		img_final.save(ruta_guardado)
 
-        return (
-            f"CV RESULT:\n"
-            f"- CNN Tissue Classification: {diagnostico_cnn}\n"
-            f"- Model: UNet Semantic Segmentation\n"
-            f"Visual evidence ready. IMPORTANT: You must include this exact tag in your response: [IMG]{ruta_guardado}[/IMG]"
-        )
+		return (
+			f"CV RESULT:\n"
+			f"- CNN Tissue Classification: {diagnostico_cnn}\n"
+			f"- Model: UNet Semantic Segmentation\n"
+			f"Visual evidence ready. IMPORTANT: You must include this exact tag in your response: [IMG]{ruta_guardado}[/IMG]"
+		)
 
-    except Exception as e:
-        return f"Error during Vision inference (UNet): {str(e)}"
+	except Exception as e:
+		return f"Error during Vision inference (UNet): {str(e)}"
 
 
 class AdminRequest(BaseModel):
@@ -201,16 +203,17 @@ def chat_admin(request: AdminRequest):
 	try:
 		if os.path.exists(LOG_PATH):
 			with open(LOG_PATH, "r", encoding="utf-8") as f:
-				contenido_log = f.read()
+				lineas = f.readlines()
+				max_lineas = 200
+				if len(lineas) > max_lineas:
+					contenido_log = "".join(lineas[-max_lineas:])
+				else:
+					contenido_log = "".join(lineas)
 		else:
 			contenido_log = "(No se encontró el archivo de log)"
 	except Exception as e:
 		contenido_log = f"(Error al leer el log: {e})"
-
 	try:
-		from langchain_core.messages import HumanMessage, SystemMessage
-		from langchain_groq import ChatGroq
-
 		llm = ChatGroq(
 			model="openai/gpt-oss-120b",
 			temperature=0,
