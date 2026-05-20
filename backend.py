@@ -36,6 +36,7 @@ class PacienteRequest(BaseModel):
 
 class MedicoRequest(BaseModel):
 	query: str
+	uploaded_files: list[str] = []
 
 
 class TabularRequest(BaseModel):
@@ -69,7 +70,11 @@ def chat_medico(request: MedicoRequest):
 
 		lf_handler = CallbackHandler()
 
-		respuesta = medico_agent.run(query=request.query, callbacks=[lf_handler])
+		respuesta = medico_agent.run(
+			query=request.query,
+			uploaded_files=request.uploaded_files,
+			callbacks=[lf_handler],
+		)
 
 		logger.info(f"<medical agent response> {respuesta}")
 		return {"respuesta": respuesta}
@@ -134,11 +139,11 @@ def predict_from_tabular_data(payload: TabularRequest):
 
 
 @app.post("/api/medico/vision")
-def analyze_ultrasound() -> str:
-    ruta_fija = "temp_uploads/current_scan.png"
+def analyze_ultrasound(filename: str = "current_scan.png") -> str:
+    ruta_fija = f"temp_uploads/{filename}"
 
     if not os.path.exists(ruta_fija):
-        return "Error: No image uploaded yet. Ask the doctor to upload an ultrasound."
+        return f"Error: Image '{filename}' not found. Ask the doctor to upload an ultrasound."
 
     try:
         diagnostico_cnn = cnn_model.predict(ruta_fija)
@@ -170,7 +175,8 @@ def analyze_ultrasound() -> str:
         img_final = Image.fromarray(img_np)
 
         os.makedirs("temp_results", exist_ok=True)
-        ruta_guardado = "temp_results/segmented_current_scan.png"
+        nombre_resultado = f"segmented_{filename}"
+        ruta_guardado = f"temp_results/{nombre_resultado}"
         img_final.save(ruta_guardado)
 
         return (

@@ -68,14 +68,26 @@ if "doctores" in grupos_usuario:
 	with col1:
 		st.subheader("Analisis de Ultrasonido")
 
-		imagen_subida = st.file_uploader("Subir Ecografía (PNG)", type=["png"])
+		imagenes_subidas = st.file_uploader(
+			"Subir Ecografías (PNG)",
+			type=["png"],
+			accept_multiple_files=True,
+		)
 
-		if imagen_subida:
+		if imagenes_subidas:
 			os.makedirs("temp_uploads", exist_ok=True)
-			ruta_fija = "temp_uploads/current_scan.png"
-			with open(ruta_fija, "wb") as f:
-				f.write(imagen_subida.getbuffer())
-			st.success("✅ Imagen cargada y lista para análisis.")
+			archivos_guardados = []
+			for idx, img in enumerate(imagenes_subidas):
+				nombre_seguro = f"{idx}_{img.name.replace(' ', '_')}"
+				ruta = os.path.join("temp_uploads", nombre_seguro)
+				with open(ruta, "wb") as f:
+					f.write(img.getbuffer())
+				archivos_guardados.append(nombre_seguro)
+			st.session_state["uploaded_files"] = archivos_guardados
+			n = len(archivos_guardados)
+			st.success(f"✅ {n} imagen{'es' if n != 1 else ''} lista{'s' if n != 1 else ''} — el copiloto las analizará cuando lo solicites.")
+		else:
+			st.session_state.setdefault("uploaded_files", [])
 
 	with col2:
 		st.subheader("Copiloto Clínico (Consulta Única)")
@@ -91,7 +103,10 @@ if "doctores" in grupos_usuario:
 
 				with st.chat_message("assistant"):
 					with st.spinner("Generando análisis clínico..."):
-						payload = {"query": prompt_medico}
+						payload = {
+							"query": prompt_medico,
+							"uploaded_files": st.session_state.get("uploaded_files", []),
+						}
 
 						try:
 							respuesta_api = requests.post(
@@ -110,6 +125,7 @@ if "doctores" in grupos_usuario:
 								st.error(f"Detalle: {respuesta_api.text}")
 						except Exception as e:
 							st.error(f"Error de conexión con FastAPI: {e}")
+
 
 elif "pacientes" in grupos_usuario:
 	if "historiales_chat" not in st.session_state:
