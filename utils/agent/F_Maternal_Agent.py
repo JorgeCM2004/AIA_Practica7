@@ -19,7 +19,7 @@ class GraphState(TypedDict):
 	answer: str
 	source: str
 	is_safe: str
-
+	chat_history: list
 
 class Maternal_Agent:
 	def __init__(self, searcher, model_name="llama3.2"):
@@ -38,53 +38,56 @@ class Maternal_Agent:
 
 		self.grader_prompt = PromptTemplate(
 			template="""[ROLE]
-            You are a strict and precise medical data evaluator.
+			You are a strict and precise medical data evaluator.
 
-            [AUDIENCE]
-            Your output will be read by an automated routing system.
+			[AUDIENCE]
+			Your output will be read by an automated routing system.
 
-            [TASK]
-            Assess if the retrieved medical context contains relevant and sufficient information to answer the user's question.
+			[TASK]
+			Assess if the retrieved medical context contains relevant and sufficient information to answer the user's question.
 
-            [EXECUTION]
-            Context: {context}
-            Question: {question}
+			[EXECUTION]
+			Context: {context}
+			Question: {question}
 
-            [ACTION & FORMAT]
-            Answer strictly with the exact word 'yes' if it is relevant, or the exact word 'no' if it is irrelevant or poor. Do not include any explanations, greetings, punctuation, or additional text.""",
+			[ACTION & FORMAT]
+			Answer strictly with the exact word 'yes' if it is relevant, or the exact word 'no' if it is irrelevant or poor. Do not include any explanations, greetings, punctuation, or additional text.""",
 			input_variables=["context", "question"],
 		)
 
 		self.generate_prompt = PromptTemplate(
 			template="""[PERSONA]
-            You are a compassionate, professional, and reliable maternal health assistant.
+			You are a compassionate, professional, and reliable maternal health assistant.
 
-            [SITUATION]
-            You are providing guidance and answering questions for pregnant patients based exclusively on our verified medical database.
+			[SITUATION]
+			You are providing guidance and answering questions for pregnant patients based exclusively on our verified medical database.
 
-            [ACTION]
-            Answer the patient's query using ONLY the provided MEDICAL CONTEXT below.
+			[PREVIOUS CONVERSATION HISTORY]
+			{chat_history}
 
-            [CONDITIONS & CONSTRAINTS]
-            - You MUST rely entirely on the MEDICAL CONTEXT provided. Do not use outside or pre-trained knowledge.
-            - If the MEDICAL CONTEXT does not contain the answer, explicitly state that you cannot answer based on the available data.
-            - ALWAYS recommend consulting an obstetrician if the query involves severe, painful, or unusual symptoms.
+			[ACTION]
+			Answer the patient's query using ONLY the provided MEDICAL CONTEXT below.
 
-            [CRITERIA FOR SUCCESS]
-            The answer directly addresses the patient's concern, is factually grounded ONLY in the context, and prioritizes maternal safety.
+			[CONDITIONS & CONSTRAINTS]
+			- You MUST rely entirely on the MEDICAL CONTEXT provided. Do not use outside or pre-trained knowledge.
+			- If the MEDICAL CONTEXT does not contain the answer, explicitly state that you cannot answer based on the available data.
+			- ALWAYS recommend consulting an obstetrician if the query involves severe, painful, or unusual symptoms.
 
-            [TONE]
-            Empathetic, reassuring, clear, and clinically objective.
+			[CRITERIA FOR SUCCESS]
+			The answer directly addresses the patient's concern, is factually grounded ONLY in the context, and prioritizes maternal safety.
 
-            ---
-            MEDICAL CONTEXT:
-            {context}
+			[TONE]
+			Empathetic, reassuring, clear, and clinically objective.
 
-            PATIENT QUERY:
-            {question}
+			---
+			MEDICAL CONTEXT:
+			{context}
 
-            ANSWER:""",
-			input_variables=["context", "question"],
+			PATIENT QUERY:
+			{question}
+
+			ANSWER:""",
+			input_variables=["context", "question", "chat_history"],
 		)
 
 		self.app = self._build_graph()
@@ -120,9 +123,12 @@ class Maternal_Agent:
 		return state
 
 	def generate_node(self, state: GraphState) -> GraphState:
+		historial_lista = state.get("chat_history", [])
+		historial_texto = "\n".join(historial_lista)
+
 		chain = self.generate_prompt | self.llm | StrOutputParser()
 
-		out = chain.invoke({"context": state["context"], "question": state["question"]})
+		out = chain.invoke({"context": state["context"], "question": state["question"], "chat_history": historial_texto})
 
 		if state["source"] == "web":
 			warning = """\n\n⚠️IMPORTANT NOTICE: I haven't found any information on this in my official medical database.
@@ -131,6 +137,10 @@ class Maternal_Agent:
 			out = out + warning
 
 		state["answer"] = out
+		nuevo_intercambio = f"Paciente: {state['question']}\nAsistente: {out}"
+		historial_lista.append(nuevo_intercambio)
+		memory_size = 3
+		state["chat_history"] = historial_lista[-memory_size:]
 		return state
 
 	def route_after_grade(self, state: GraphState) -> Literal["web_search", "generate"]:
@@ -195,7 +205,7 @@ class Maternal_Agent:
 		g.add_edge("web_search", "generate")
 		g.add_edge("generate", END)
 
-		return g.compile()
+		return g.compile(checkpointer=self.memory)
 
 	def run(self, query: str, session_id: str, callbacks=None):
 		inputs = {
