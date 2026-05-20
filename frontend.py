@@ -11,7 +11,7 @@ st.set_page_config(page_title="AIA_P7", layout="wide")
 API_URL = os.getenv("API_URL", "http://127.0.0.1:8000")
 
 headers = st.context.headers if hasattr(st.context, "headers") else {}
-grupos_usuario = headers.get("X-authentik-groups", "doctores").lower()
+grupos_usuario = headers.get("X-authentik-groups", "admin").lower()
 
 nombre_usuario = headers.get("X-authentik-username", "usuario_local").lower()
 
@@ -45,7 +45,7 @@ def renderizar_mensaje_multimodal(texto):
 			if os.path.exists(ruta_imagen):
 				st.image(
 					ruta_imagen,
-					use_container_width=True,
+					width='stretch',
 				)
 			else:
 				st.warning("⚠️ La imagen procesada no se encontró en el servidor.")
@@ -62,7 +62,7 @@ if "doctores" in grupos_usuario:
 		st.link_button(
 			"🚪 Cerrar Sesión",
 			"/outpost.goauthentik.io/sign_out",
-			use_container_width=True,
+			width='stretch',
 		)
 
 	with col1:
@@ -143,12 +143,12 @@ elif "pacientes" in grupos_usuario:
 		st.link_button(
 			"🚪 Cerrar Sesión",
 			"/outpost.goauthentik.io/sign_out",
-			use_container_width=True,
+			width='stretch',
 		)
 
 		st.title("💬 Tus Chats")
 
-		if st.button("➕ Nuevo Chat", use_container_width=True):
+		if st.button("➕ Nuevo Chat", width='stretch'):
 			nuevo_id = str(uuid.uuid4())
 			st.session_state.historiales_chat[nuevo_id] = []
 			st.session_state.session_id_actual = nuevo_id
@@ -166,7 +166,7 @@ elif "pacientes" in grupos_usuario:
 			if s_id == st.session_state.session_id_actual:
 				titulo = f"👉 {titulo}"
 
-			if st.button(titulo, key=s_id, use_container_width=True):
+			if st.button(titulo, key=s_id, width='stretch'):
 				st.session_state.session_id_actual = s_id
 				st.rerun()
 
@@ -175,7 +175,7 @@ elif "pacientes" in grupos_usuario:
 		st.subheader("Opciones")
 
 		if st.button(
-			"🗑️ Borrar chat actual", use_container_width=True, type="secondary"
+			"🗑️ Borrar chat actual", width='stretch', type="secondary"
 		):
 			id_borrar = st.session_state.session_id_actual
 			del st.session_state.historiales_chat[id_borrar]
@@ -232,10 +232,58 @@ elif "admin" in grupos_usuario:
 		st.link_button(
 			"🚪 Cerrar Sesión",
 			"/outpost.goauthentik.io/sign_out",
-			use_container_width=True,
+			width='stretch',
 		)
 
-	st.title("Panel de control")
+	st.title("🛡️ Panel de Administración")
+
+	if "admin_chat" not in st.session_state:
+		st.session_state.admin_chat = []
+
+	col_logs, col_chat = st.columns([1, 2])
+
+	with col_logs:
+		st.subheader("📄 Logs del sistema")
+		log_path = "logs/backend.log"
+		if os.path.exists(log_path):
+			with open(log_path, "r", encoding="utf-8") as f:
+				contenido_log = f.read()
+			lineas = contenido_log.strip().splitlines()
+			with st.expander(f"backend.log ({len(lineas)} líneas)", expanded=True):
+				st.code("\n".join(lineas[-100:]), language="log")
+		else:
+			st.info("No se encontró el archivo de log.")
+
+	with col_chat:
+		st.subheader("🤖 Analista de Logs")
+
+		for msg in st.session_state.admin_chat:
+			with st.chat_message(msg["role"]):
+				st.write(msg["content"])
+
+		if prompt_admin := st.chat_input("Pregunta sobre los logs, errores, actividad..."):
+			st.session_state.admin_chat.append({"role": "user", "content": prompt_admin})
+			with st.chat_message("user"):
+				st.write(prompt_admin)
+
+			with st.chat_message("assistant"):
+				with st.spinner("Analizando logs..."):
+					try:
+						respuesta_api = requests.post(
+							f"{API_URL}/api/admin/chat",
+							json={"query": prompt_admin},
+						)
+						if respuesta_api.status_code == 200:
+							respuesta_texto = respuesta_api.json()["respuesta"]
+							st.write(respuesta_texto)
+							st.session_state.admin_chat.append(
+								{"role": "assistant", "content": respuesta_texto}
+							)
+						else:
+							st.error(f"Error en el servidor: {respuesta_api.status_code}")
+							st.error(f"Detalle: {respuesta_api.text}")
+					except Exception as e:
+						st.error(f"Error de conexión con FastAPI: {e}")
 
 else:
 	st.error("🚨 Acceso denegado. Su usuario no tiene un rol asignado en el sistema.")

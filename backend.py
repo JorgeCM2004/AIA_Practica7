@@ -190,6 +190,65 @@ def analyze_ultrasound(filename: str = "current_scan.png") -> str:
         return f"Error during Vision inference (UNet): {str(e)}"
 
 
+class AdminRequest(BaseModel):
+	query: str
+
+
+@app.post("/api/admin/chat")
+def chat_admin(request: AdminRequest):
+	LOG_PATH = os.getenv("LOG_PATH", "logs/backend.log")
+
+	try:
+		if os.path.exists(LOG_PATH):
+			with open(LOG_PATH, "r", encoding="utf-8") as f:
+				contenido_log = f.read()
+		else:
+			contenido_log = "(No se encontró el archivo de log)"
+	except Exception as e:
+		contenido_log = f"(Error al leer el log: {e})"
+
+	try:
+		from langchain_core.messages import HumanMessage, SystemMessage
+		from langchain_groq import ChatGroq
+
+		llm = ChatGroq(
+			model="openai/gpt-oss-120b",
+			temperature=0,
+			api_key=os.getenv("GROQ_API_KEY"),
+		)
+
+		sys_msg = SystemMessage(
+			content=f"""
+			[ROLE]
+			You are an intelligent log analysis assistant for a Maternal Health AI platform.
+			Your job is to help the system administrator understand system activity, detect anomalies,
+			identify usage patterns, and surface any issues from the application logs.
+
+			[CONTEXT]
+			The following is the full content of the backend application log:
+
+			--- LOG START ---
+			{contenido_log}
+			--- LOG END ---
+
+			[TASK]
+			Answer the administrator's questions accurately and concisely based on the log above.
+			You can summarize activity, count events, detect errors, identify heavy users,
+			flag suspicious queries, or provide any other insights derived strictly from the log.
+			Always cite specific log lines or timestamps when relevant.
+			Respond in the same language the administrator uses.
+			"""
+		)
+
+		respuesta = llm.invoke([sys_msg, HumanMessage(content=request.query)])
+		logger.info(f"<admin query> {request.query}")
+		return {"respuesta": respuesta.content}
+
+	except Exception as e:
+		logger.error(f"<ERROR from admin chat> {str(e)}")
+		raise HTTPException(status_code=500, detail=str(e))
+
+
 if __name__ == "__main__":
 	import uvicorn
 
