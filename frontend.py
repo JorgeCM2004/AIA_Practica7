@@ -11,7 +11,7 @@ st.set_page_config(page_title="AIA_P7", layout="wide")
 API_URL = os.getenv("API_URL", "http://127.0.0.1:8000")
 
 headers = st.context.headers if hasattr(st.context, "headers") else {}
-grupos_usuario = headers.get("X-authentik-groups", "admin").lower()
+grupos_usuario = headers.get("X-authentik-groups", "").lower()
 
 nombre_usuario = headers.get("X-authentik-username", "usuario_local").lower()
 
